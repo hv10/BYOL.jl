@@ -16,3 +16,8 @@ projector, predictor = make_mlp(32=>8), make_mlp(8=>8)
 # note that predictor input & output dim has to match projector output dim!
 online = WrappedNetwork(model, projector, predictor)
 ```
+
+## ToDos
+
+- [ ] Implement a few showcase use-cases
+- [ ] Improve interface - current version with updater function is suboptimal
