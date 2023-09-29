@@ -38,6 +38,12 @@ ema_update(old, new; beta=0.99) = begin
     reconstruct(ps_upd)
 end
 
+"""
+A wrapper for the online and target network of BYOL.
+It connects the `net` to the `projector` and `predictor`.
+Make sure that the predictor input and output size matches the projector output size.
+Make sure that the projectors input shape is compatible with the wrapped networks output shape.
+"""
 struct WrappedNetwork
     net::Chain # fθ
     projector::Chain # gθ
