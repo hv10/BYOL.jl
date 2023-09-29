@@ -50,6 +50,10 @@ struct WrappedNetwork
     predictor::Chain # pθ
 end
 Flux.@functor WrappedNetwork
+
+"""
+Applies the online network to the input `x` and returns the output of the wrapped network, the projector and the predictor.
+"""
 (m::WrappedNetwork)(x) = begin
     hx = m.net(x)
     px = m.projector(hx)
