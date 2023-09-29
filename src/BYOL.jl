@@ -39,9 +39,9 @@ ema_update(old, new; beta=0.99) = begin
 end
 
 struct WrappedNetwork
-    net::Chain
-    projector::Chain
-    predictor::Chain
+    net::Chain # fθ
+    projector::Chain # gθ
+    predictor::Chain # pθ
 end
 Flux.@functor WrappedNetwork
 (m::WrappedNetwork)(x) = begin
@@ -51,13 +51,34 @@ Flux.@functor WrappedNetwork
     return hx, px, qx
 end
 
-# a literal translation of the papers algoithm
-byol_update!(opt_state, x, online::WrappedNetwork, target::WrappedNetwork, aug1::Function, aug2::Function) = begin
-    # online = fθ, target = fξ, projector, target_projector, predictor are rolled into online/target 
-    # aug1 = t, aug2 = t′
-    # take gradient of loss w.r.t model
-    xdims = ndims(x)
-    @show size(x)
+"""
+An almost literal translation of the BYOL papers algorithm.
+It performs the byol update routine on the online and target network for one batch of data.
+
+Mapping the concepts from the paper to the code:
+online = fθ, target = fξ, 
+gθ, pθ, gξ are rolled into online/target network
+aug1 = t, aug2 = t′
+
+Inputs:
+- opt_state: the result of Optimisers.setup on the online network
+- x: the batch of data
+- online::WrappedNetwork: the online network
+- target::WrappedNetwork: the target network
+- aug1::Function: the first augmentation function
+- aug2::Function: the second augmentation function
+
+Returns:
+- opt_state: the updated optimiser state
+- online::WrappedNetwork: the updated online network
+- target::WrappedNetwork: the updated target network
+"""
+byol_update!(
+    opt_state, x,
+    online::WrappedNetwork, target::WrappedNetwork,
+    aug1::Function, aug2::Function;
+    use_momentum=true, beta=0.99
+) = begin
     grad = Flux.gradient(online) do model
         # for every element in batch (last axis = batch axis)
         # apply aug1 and aug2 to batch
@@ -67,7 +88,7 @@ byol_update!(opt_state, x, online::WrappedNetwork, target::WrappedNetwork, aug1:
         _, _, q2 = model(aug2(x))
         # notice the flipped augmentation for target
         # notice that we do not apply the predictor to target we are only interested in the projected version
-        # notice the ignored gradient for target
+        # notice that target is not part of the gradient
         _, zt1, _ = target(aug2(x))
         _, zt2, _ = target(aug1(x))
         # normalize the vectors where neccessary
@@ -80,8 +101,12 @@ byol_update!(opt_state, x, online::WrappedNetwork, target::WrappedNetwork, aug1:
     end
     # apply optimizer
     Flux.update!(opt_state, online, grad[1])
-    # update target network
-    target = ema_update(target, online; beta=0.99)
+    # update target network / allow for momentum free version
+    if use_momentum
+        target = ema_update(target, online; beta=beta)
+    else
+        target = deepcopy(online)
+    end
     return opt_state, online, target
 end
 
