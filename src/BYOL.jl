@@ -45,7 +45,7 @@ Make sure that the predictor input and output size matches the projector output 
 Make sure that the projectors input shape is compatible with the wrapped networks output shape.
 """
 struct WrappedNetwork
-    net::Chain # fθ
+    net # fθ
     projector::Chain # gθ
     predictor::Chain # pθ
 end
