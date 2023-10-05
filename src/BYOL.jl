@@ -89,18 +89,20 @@ byol_update!(
     aug1::Function, aug2::Function;
     use_momentum=true, beta=0.99
 ) = begin
+    a1 = aug1(x)
+    a2 = aug2(x)
     grad = Flux.gradient(online) do model
         # for every element in batch (last axis = batch axis)
         # apply aug1 and aug2 to batch
         # apply encoder model to augmented batch
         # apply projector to encoder output
-        _, _, q1 = model(aug1(x))
-        _, _, q2 = model(aug2(x))
+        _, _, q1 = model(a1)
+        _, _, q2 = model(a2)
         # notice the flipped augmentation for target
         # notice that we do not apply the predictor to target we are only interested in the projected version
         # notice that target is not part of the gradient
-        _, zt1, _ = target(aug2(x))
-        _, zt2, _ = target(aug1(x))
+        _, zt1, _ = target(a2)
+        _, zt2, _ = target(a1)
         # normalize the vectors where neccessary
         # calc loss acc. to paper
         loss = 2 - 2 * (
