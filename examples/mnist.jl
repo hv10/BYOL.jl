@@ -11,18 +11,37 @@ using Random
 using Distributions
 using BYOL
 
+plotlyjs()
 
-main() = begin
+"""
+This extra mapping function is neccessary to support batched inputs.
+It also makes the application of an augmentation deterministic under seed `s`.
+(Which is neccessary for BYOL to learn over multiple epochs.)
+"""
+aug(x, pipeline; s=1234) = begin
+    Random.seed!(s)
+    mapslices(x -> augment(x, pipeline), x, dims=(1, 2))
+end
+
+"""
+Run BYOL as an example self-supervision training method on the MNIST dataset.
+"""
+main(emb_dim=2) = begin
     # Load the MNIST dataset
     train = MNIST(split=:train)
     X_train = train.features
     y_train = train.targets
 
-
+    @info size(X_train)
     # define the augmentations used to differentiate samples
-    pl = Either(1 => FlipX(), 1 => FlipY(), 2 => NoOp()) |>
-         Rotate(0:360) |>
-         Resize(28, 28)
+    # feel free to play around with this and see how it affects the results
+    # make sure that your augmentations are invariant under the downstream task
+    #   i.e. MNIST labels are not invariant under flipping operations: FlipY(6) ≈ 9
+    pl = ElasticDistortion(6, scale=0.3, border=true) |>
+         Rotate([10, -5, -3, 0, 3, 5, 10]) |>
+         ShearX(-10:10) * ShearY(-10:10) |>
+         CropSize(28, 28) |>
+         Zoom(0.9:0.1:1.2)
 
     # Create the online and target network
     # The online network is the network that is trained.
@@ -32,15 +51,12 @@ main() = begin
         MLUtils.flatten,
         Dense(28^2, 8, relu),
         Dense(8, 16, relu),
-        Dense(16, 3)
+        Dense(16, emb_dim, tanh_fast)
     )
-    projector, predictor = make_mlp(3 => 8), make_mlp(8 => 8)
+    projector, predictor = make_mlp(emb_dim => 8), make_mlp(8 => 8)
     online = WrappedNetwork(model, projector, predictor)
     target = deepcopy(online)
     opt_state = Optimisers.setup(Optimisers.Adam(), online)
-
-    aug(x) = mapslices(x -> augment(x, pl), x, dims=(1, 2))
-
 
     train_dl = MLUtils.DataLoader((X_train, y_train), batchsize=256, shuffle=true, collate=true)
 
@@ -48,7 +64,10 @@ main() = begin
     for i in 1:20
         @info "Epoch $i"
         for (x, _) in ProgressBar(train_dl)
-            opt_state, online, target = byol_update!(opt_state, x, online, target, aug, aug)
+            opt_state, online, target = byol_update!(
+                opt_state, x, online, target,
+                x -> aug(x, pl; s=1), x -> aug(x, pl; s=2)
+            )
         end
         push!(figs, plot_mnist_emb_space(online.net))
         display(figs[end])
@@ -61,11 +80,15 @@ end
 
 plot_mnist_emb_space(model) = begin
     test = MNIST(split=:test)
-    idxs = sample(axes(test.features, 3), 100)
+    idxs = sample(axes(test.features, 3), 1000, replace=false)
     X_test = test.features[:, :, idxs]
     y_test = test.targets[idxs]
     yhat = model(X_test)
-    scatter(yhat[1, :], yhat[2, :], yhat[3, :], color=y_test, legend=false)
+    if ndims(yhat) == 3
+        scatter(yhat[1, :], yhat[2, :], yhat[3, :], color=y_test, legend=false, markersize=0.9)
+    else
+        scatter(yhat[1, :], yhat[2, :], color=y_test, legend=false)
+    end
 end
 
 if abspath(PROGRAM_FILE) == @__FILE__
