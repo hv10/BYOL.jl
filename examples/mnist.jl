@@ -29,10 +29,10 @@ Run BYOL as an example self-supervision training method on the MNIST dataset.
 main(emb_dim=2) = begin
     # Load the MNIST dataset
     train = MNIST(split=:train)
-    X_train = train.features
-    y_train = train.targets
+    idxs = sample(axes(train.features, 3), 5000, replace=false) # for speed up
+    X_train = train.features[:, :, idxs]
+    y_train = train.targets[idxs]
 
-    @info size(X_train)
     # define the augmentations used to differentiate samples
     # feel free to play around with this and see how it affects the results
     # make sure that your augmentations are invariant under the downstream task
@@ -61,33 +61,35 @@ main(emb_dim=2) = begin
     train_dl = MLUtils.DataLoader((X_train, y_train), batchsize=256, shuffle=true, collate=true)
 
     figs = []
-    for i in 1:20
+    for i in 1:50
         @info "Epoch $i"
-        for (x, _) in ProgressBar(train_dl)
+        for (i, (x, _)) in ProgressBar(enumerate(train_dl))
             opt_state, online, target = byol_update!(
                 opt_state, x, online, target,
-                x -> aug(x, pl; s=1), x -> aug(x, pl; s=2)
+                x -> aug(x, pl; s=i + 1), x -> aug(x, pl; s=i)
             )
         end
         push!(figs, plot_mnist_emb_space(online.net))
         display(figs[end])
     end
-    @gif for fig in figs
-        fig
-    end fps = 4
+    anim = @animate for fig in figs
+        plot(fig)
+    end
+    gif(anim, joinpath(@__DIR__, "out.gif"))
     return online, figs
 end
 
 plot_mnist_emb_space(model) = begin
+    Random.seed!(1234)
     test = MNIST(split=:test)
     idxs = sample(axes(test.features, 3), 1000, replace=false)
     X_test = test.features[:, :, idxs]
     y_test = test.targets[idxs]
     yhat = model(X_test)
     if ndims(yhat) == 3
-        scatter(yhat[1, :], yhat[2, :], yhat[3, :], color=y_test, legend=false, markersize=0.9)
+        scatter(yhat[1, :], yhat[2, :], yhat[3, :], color=y_test, legend=false, markersize=0.9, lims=(-1, 1))
     else
-        scatter(yhat[1, :], yhat[2, :], color=y_test, legend=false)
+        scatter(yhat[1, :], yhat[2, :], color=y_test, legend=false, lims=(-1, 1))
     end
 end
 
