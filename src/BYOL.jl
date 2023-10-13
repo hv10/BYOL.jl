@@ -9,10 +9,23 @@ using Flux
 using LinearAlgebra
 using Statistics
 
-export make_mlp, make_simsiammlp
+export make_simple, make_mlp, make_simsiammlp
 export WrappedNetwork
 export byol_update!
 
+"""
+A simple MLP with one hidden layer.
+This one should not work for BYOL.
+"""
+make_simple(in_out::Pair; hidden_size::Int=4096) = Chain(
+    Dense(in_out.first => hidden_size),
+    relu,
+    Dense(hidden_size => in_out.second)
+)
+
+"""
+The simplest network to use with BYOL.
+"""
 make_mlp(in_out::Pair; hidden_size::Int=4096) = Chain(
     Dense(in_out.first => hidden_size),
     BatchNorm(hidden_size),
